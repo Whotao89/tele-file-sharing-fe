@@ -1,9 +1,9 @@
 package config
 
 import (
-	"os"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 
 	"github.com/joho/godotenv"
@@ -26,13 +26,14 @@ var C Config
 
 /*
 Load trả về thiết lập từ đường dẫn env cho trước
+
 	VD: env := "env/example.env"
 */
 func Load(env string) {
 	var err error
 	if env != "" {
 		err = godotenv.Load(env)
-	}else{
+	} else {
 		err = godotenv.Load("env/dev.env")
 	}
 	fmt.Println("Loaded env error =", err)

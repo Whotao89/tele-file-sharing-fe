@@ -9,26 +9,33 @@ import (
 	"fe-file-sharing/internal/config"
 )
 
-//! Trong quá trình (WIP)
 func main() {
-    config.Load("") // Load once
+	// Load config
+	config.Load("")
+
 	fmt.Println("Tải config thành công")
 
-	newClient := api.NewClient(
+	// Create API client (NO MORE ForBot)
+	client := api.NewClient(
 		config.C.BackendAPIBase,
-		config.C.TelegramBotToken,
+		0,
+		"telegram",
+		nil,
 	)
+
 	fmt.Println("Tạo client mới thành công")
-    
-	newBot, err := bot.NewBot(
-        config.C.TelegramBotToken,
-		newClient,
-    )
+
+	// Create bot
+	teleBot, err := bot.NewBot(
+		config.C.TelegramBotToken,
+		client,
+	)
 	if err != nil {
 		log.Fatalf("Tạo bot mới thất bại: %v", err)
-    }
+	}
 	fmt.Println("Tạo bot mới thành công")
 
-    newBot.Start()
+	// Start bot
+	teleBot.Start()
 	fmt.Println("Bot đã bắt đầu chạy")
 }

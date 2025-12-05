@@ -3,13 +3,13 @@ package bot
 import (
 	"fmt"
 	"io"
-	"os"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"fe-file-sharing/internal/api"
 
-	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type Bot struct {
@@ -36,16 +36,12 @@ func (b *Bot) Start() {
 		}
 
 		switch update.Message.Command() {
-			case "me":
-				b.commandMe(update)
-			case "files":
-				b.commandFiles(update)
-			//! Trong quá trình (WIP)
-			// case "share":
-			// 	b.commandCreateShare(update)
+		case "me":
+			b.commandMe(update)
+		case "files":
+			b.commandFiles(update)
 		}
 
-		// upload file
 		if update.Message.Document != nil {
 			b.handleUpload(update)
 		}
@@ -87,8 +83,6 @@ func (b *Bot) commandFiles(upd tgbotapi.Update) {
 	b.reply(upd, msg)
 }
 
-// ---------------- UPLOAD ----------------
-
 func (b *Bot) handleUpload(upd tgbotapi.Update) {
 	doc := upd.Message.Document
 
@@ -98,7 +92,6 @@ func (b *Bot) handleUpload(upd tgbotapi.Update) {
 		return
 	}
 
-	// download binary
 	url := file.Link(b.TG.Token)
 	data, err := downloadURL(url)
 	if err != nil {
@@ -106,15 +99,18 @@ func (b *Bot) handleUpload(upd tgbotapi.Update) {
 		return
 	}
 
-	// lưu tạm để gửi sang backend
 	tmp := filepath.Join(os.TempDir(), doc.FileName)
 	os.WriteFile(tmp, data, 0644)
 
-	resp, err := b.Client.UploadFile(api.UploadFileRequest{
+	// gửi đủ thông tin
+	req := api.UploadFileRequest{
 		TelegramFileID: doc.FileID,
 		Filename:       doc.FileName,
-	})
+		Size:           int64(doc.FileSize),
+		MimeType:       doc.MimeType,
+	}
 
+	resp, err := b.Client.UploadFile(req)
 	if err != nil {
 		b.reply(upd, "Lỗi tải lên: "+err.Error())
 		return
@@ -131,8 +127,6 @@ func downloadURL(url string) ([]byte, error) {
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }
-
-// ---------------- HELPERS ----------------
 
 func (b *Bot) reply(upd tgbotapi.Update, text string) {
 	msg := tgbotapi.NewMessage(upd.Message.Chat.ID, text)
