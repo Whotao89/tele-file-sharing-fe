@@ -82,3 +82,14 @@ func (s *ShareService) DownloadShare(telegramID int64, shareID int64, accessToke
 	}
 	return data, filename, nil
 }
+
+func (s *ShareService) RevokeShare(telegramID int64, shareID int64) error {
+	prevID := s.apiClient.TelegramID
+	s.apiClient.TelegramID = telegramID
+	
+	// Gọi client TV1
+	_, err := s.apiClient.RevokeShare(shareID)
+	
+	s.apiClient.TelegramID = prevID
+	return err
+}

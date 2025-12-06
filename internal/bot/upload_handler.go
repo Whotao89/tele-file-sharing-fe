@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-    "strconv"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -84,7 +84,7 @@ func (h *BotHandler) HandleUpload(update tgbotapi.Update) {
     defer h.FileSvc.CleanUp(tmpPath)
 
     // Start upload: get fileID and presigned URL
-    fileID, uploadURL, err := h.UploadSvc.StartUpload(int64(user.ID), doc.FileName, int64(doc.FileSize))
+    fileID, uploadURL, err := h.UploadSvc.StartUpload(int64(user.ID), doc.FileName, int64(doc.FileSize), doc.MimeType)
     if err != nil {
         h.replyRaw(chatID, "Không thể khởi tạo upload: "+err.Error())
         return
@@ -99,8 +99,7 @@ func (h *BotHandler) HandleUpload(update tgbotapi.Update) {
     }
 
     // Complete upload
-    _, err = h.UploadSvc.CompleteUpload(int64(user.ID), fileID)
-    // err = h.UploadSvc.CompleteUpload(int64(user.ID), fileID)
+    err = h.UploadSvc.CompleteUpload(int64(user.ID), fileID)
     if err != nil {
         h.replyRaw(chatID, "Không thể xác nhận hoàn tất upload: "+err.Error())
         return
@@ -191,12 +190,58 @@ func (h *BotHandler) HandleFiles(update tgbotapi.Update) {
 // HandleStart shows the main menu keyboard
 func (h *BotHandler) HandleStart(update tgbotapi.Update) {
     chatID := update.Message.Chat.ID
+
+    args := update.Message.CommandArguments() // Lấy phần sau chữ /start
+
+    //Deep Link Tải File (Link có dạng start=share_123)
+    if strings.HasPrefix(args, "share_") {
+        shareIdentity := strings.TrimPrefix(args, "share_")
+
+        shareID, err := strconv.ParseInt(shareIdentity, 10, 64)
+        if err != nil {
+            h.replyRaw(chatID, "❌ Link chia sẻ không hợp lệ.")
+            return
+        }
+
+        meta, err := h.ShareSvc.GetShareMetadata(int64(update.Message.From.ID), shareID)
+        
+        if err != nil {
+            h.replyRaw(chatID, "⚠️ Link này đã hết hạn hoặc bị thu hồi.")
+            return
+        }
+
+        if meta.Revoked {
+            h.replyRaw(chatID, "⛔ Link chia sẻ này đã bị thu hồi bởi chủ sở hữu.")
+            return
+        }
+
+        fileInfo := fmt.Sprintf("🎁 *Bạn nhận được một file chia sẻ!*\n\n📄 Tên: `%s`\n📦 Size: %d bytes", 
+            meta.File.Filename, meta.File.Size)
+        
+        msg := tgbotapi.NewMessage(chatID, fileInfo)
+        msg.ParseMode = "Markdown"
+
+        // Kiểm tra xem có cần mật khẩu không (dựa vào Hash hoặc field RequirePassword)
+        if meta.Hash != "" { 
+             // Hiện nút "Nhập mật khẩu"
+            btnAuth := tgbotapi.NewInlineKeyboardButtonData("🔐 Nhập Mật Khẩu", fmt.Sprintf("cmd:auth:%d", shareID))
+            msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btnAuth))
+        } else {
+             // Hiện nút "Tải xuống" luôn
+            btnDown := tgbotapi.NewInlineKeyboardButtonData("⬇️ Tải Xuống Ngay", fmt.Sprintf("cmd:download:%d", shareID))
+            msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btnDown))
+        }
+        
+        h.TG.Send(msg)
+        return
+    }       
+
     welcome := "Xin chào! Tôi là FileShareBot.\nDưới đây là các lệnh bạn có thể dùng:\n" +
         "\n• /me — Xem thông tin tài khoản của bạn.\n" +
 		"• /upload — Tải lên một file: gửi file dưới dạng Document trong chat (không gửi ảnh).\n" +
         "• /myfiles — Xem danh sách file bạn đã tải lên.\n" +
         "• /share <file\\_ID> — Tạo link chia sẻ cho một file.\n" +
-        "• /revoke <file\\_ID> — Thu hồi một link chia sẻ.\n\n" 
+        "• /revoke <share\\_ID> — Thu hồi một link chia sẻ.\n\n" 
 
     msg := tgbotapi.NewMessage(chatID, welcome)
     msg.ParseMode = "Markdown"
@@ -260,6 +305,36 @@ func (h *BotHandler) HandleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		h.StateMu.Unlock()
 
 		h.replyRaw(chatID, "Bạn có muốn đặt mật khẩu không?\n👉 Nhập mật khẩu hoặc gõ `skip` để bỏ qua:")
+    // Case: Người nhận bấm nút "Tải xuống"
+    case strings.HasPrefix(data, "cmd:download:"):
+        parts := strings.Split(data, ":")
+        shareID, _ := strconv.ParseInt(parts[2], 10, 64)
+        
+        h.replyRaw(chatID, "⬇️ Đang lấy file từ server...")
+        
+        // Gọi Download (Token rỗng vì không cần pass)
+        fileData, filename, err := h.ShareSvc.DownloadShare(userID, shareID, "")
+        if err != nil {
+            h.replyRaw(chatID, "❌ Lỗi tải file: "+err.Error())
+            return
+        }
+        
+        doc := tgbotapi.FileBytes{Name: filename, Bytes: fileData}
+        h.TG.Send(tgbotapi.NewDocument(chatID, doc))
+
+    // Case: Người nhận bấm nút "Nhập mật khẩu"
+    case strings.HasPrefix(data, "cmd:auth:"):
+        parts := strings.Split(data, ":")
+        shareID, _ := strconv.ParseInt(parts[2], 10, 64)
+        
+        // Lưu state để đợi nhập pass
+        h.StateMu.Lock()
+        if h.States[userID] == nil { h.States[userID] = make(map[string]interface{}) }
+        h.States[userID]["auth_share_id"] = shareID
+        h.States[userID]["state"] = "awaiting_auth_password" // Tạo state mới
+        h.StateMu.Unlock()
+        
+        h.replyRaw(chatID, "🔑 Vui lòng nhập mật khẩu để mở khóa file:")
 	// ------------------------------
     default:
         h.replyRaw(chatID, "Hành động chưa được hỗ trợ: "+data)
@@ -289,7 +364,29 @@ func (h *BotHandler) HandleMyShares(update tgbotapi.Update) {
 // HandleRevoke prompts user to provide share id to revoke
 func (h *BotHandler) HandleRevoke(update tgbotapi.Update) {
     chatID := update.Message.Chat.ID
-    h.replyRaw(chatID, "Để thu hồi share, gửi: /revoke <share_id> (ví dụ: /revoke 123)")
+	userID := int64(update.Message.From.ID)
+	args := update.Message.CommandArguments() 
+
+	if args == "" {
+		h.replyRaw(chatID, "⚠️ Cách dùng: `/revoke <share_id>`\n(Bạn có thể lấy Share ID khi tạo share hoặc bấm nút Revoke trong danh sách file)")
+		return
+	}
+
+	shareID, err := strconv.ParseInt(args, 10, 64)
+	if err != nil {
+		h.replyRaw(chatID, "❌ Share ID phải là một con số. Ví dụ: `/revoke 101`")
+		return
+	}
+
+	h.replyRaw(chatID, "⏳ Đang thu hồi liên kết...")
+
+	err = h.ShareSvc.RevokeShare(userID, shareID)
+	
+	if err != nil {
+		h.replyRaw(chatID, "❌ Thu hồi thất bại: "+err.Error())
+	} else {
+		h.replyRaw(chatID, fmt.Sprintf("✅ Đã thu hồi thành công Share ID: `%d`.\nLink này sẽ không còn truy cập được nữa.", shareID))
+	}
 }
 
 func (h *BotHandler) replyRaw(chatID int64, text string) {
@@ -327,6 +424,40 @@ func (h *BotHandler) HandleTextInput(update tgbotapi.Update) {
     case StateAwaitingConfirm:
         h.handleInputConfirm(chatID, userID, text)
 
+    case "awaiting_auth_password":
+		shareIDVal := userState["auth_share_id"]
+		if shareIDVal == nil {
+			h.replyRaw(chatID, "❌ Lỗi phiên làm việc. Vui lòng bấm lại nút trên tin nhắn.")
+			return
+		}
+		shareID := shareIDVal.(int64)
+
+		h.replyRaw(chatID, "⏳ Đang kiểm tra mật khẩu...")
+
+		token, err := h.ShareSvc.AuthorizeShare(userID, shareID, text)
+		
+		if err != nil {
+			h.replyRaw(chatID, "❌ Mật khẩu sai! Vui lòng nhập lại:")
+			// Không xóa state để user nhập lại tiếp
+			return
+		}
+
+		h.replyRaw(chatID, "🔓 Mật khẩu chính xác! Đang tải file...")
+		
+		data, filename, err := h.ShareSvc.DownloadShare(userID, shareID, token)
+		if err != nil {
+			h.replyRaw(chatID, "❌ Lỗi tải file: "+err.Error())
+		} else {
+			// Gửi file
+			doc := tgbotapi.FileBytes{Name: filename, Bytes: data}
+			h.TG.Send(tgbotapi.NewDocument(chatID, doc))
+		}
+
+		h.StateMu.Lock()
+		delete(h.States, userID)
+		h.StateMu.Unlock()
+
+
     default:
         h.replyRaw(chatID, "Tôi không hiểu. Gõ /help để xem danh sách lệnh.")
     }
@@ -334,20 +465,32 @@ func (h *BotHandler) HandleTextInput(update tgbotapi.Update) {
 
 // handleInputPassword: xử lý nhập mật khẩu
 func (h *BotHandler) handleInputPassword(chatID int64, userID int64, input string) {
-    password := input
-    if password == "-" || password == "none" {
-        password = "" // Không có mật khẩu
-    }
+    inputClean := strings.TrimSpace(strings.ToLower(input))
 
-    h.StateMu.Lock()
-    if _, exists := h.States[userID]; !exists {
-        h.States[userID] = make(map[string]interface{})
-    }
-    h.States[userID]["password"] = password
-    h.States[userID]["state"] = StateAwaitingExpiresAt
-    h.StateMu.Unlock()
+	password := input 
 
-    h.replyRaw(chatID, "✅ Mật khẩu được lưu.\n\n📅 Bước tiếp theo: Nhập ngày hết hạn (định dạng: YYYY-MM-DD) hoặc gõ '-' nếu không có hạn:")
+	if inputClean == "skip" || inputClean == "-"  {
+		password = "" 
+	}
+
+	h.StateMu.Lock()
+	if _, exists := h.States[userID]; !exists {
+		h.States[userID] = make(map[string]interface{})
+	}
+	h.States[userID]["password"] = password
+	h.States[userID]["state"] = StateAwaitingExpiresAt
+	h.StateMu.Unlock()
+
+	msg := ""
+	if password == "" {
+		msg = "✅ Bạn chọn KHÔNG đặt mật khẩu."
+	} else {
+		msg = "🔐 Đã lưu mật khẩu."
+	}
+	
+	msg += "\n\n📅 Bước tiếp theo: Nhập ngày hết hạn (định dạng: YYYY-MM-DD) hoặc gõ 'skip' nếu muốn vĩnh viễn:"
+
+	h.replyRaw(chatID, msg)
 }
 
 // handleInputExpiresAt: xử lý nhập ngày hết hạn
@@ -439,8 +582,16 @@ func (h *BotHandler) handleInputConfirm(chatID int64, userID int64, input string
     h.StateMu.Unlock()
 
     // Trả lại share link
-    shareURL := fmt.Sprintf("https://example.com/s/%s", share.Hash) // TODO: động hóa base URL
-    h.replyRaw(chatID, fmt.Sprintf("✅ Share tạo thành công!\n\n🔗 Link: %s", shareURL))
+    shareURL := fmt.Sprintf("https://t.me/%s?start=share_%d", h.TG.Self.UserName, share.ID)
+    msg := fmt.Sprintf(
+        "✅ Share tạo thành công!\n"+
+        "🆔 Share ID: `%d` (Copy số này để Revoke)\n"+
+        "🔗 Link: %s", 
+        share.ID,
+        shareURL,
+    )
+    
+    h.replyRaw(chatID, msg)
 }
 
 // helper to read all bytes (unused for now)

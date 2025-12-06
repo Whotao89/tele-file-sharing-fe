@@ -82,10 +82,13 @@ func (s *FileService) CleanUp(path string) {
 
 // ListFiles: gọi backend trả về danh sách file của user
 func (s *FileService) ListFiles(telegramID int64) ([]api.File, error) {
-	prev := s.apiClient.TelegramID
+	prevID := s.apiClient.TelegramID
 	s.apiClient.TelegramID = telegramID
+	
 	files, err := s.apiClient.ListFiles()
-	s.apiClient.TelegramID = prev
+	
+	s.apiClient.TelegramID = prevID
+	
 	if err != nil {
 		return nil, fmt.Errorf("ListFiles failed: %w", err)
 	}

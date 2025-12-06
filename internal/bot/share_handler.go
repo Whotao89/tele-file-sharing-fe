@@ -1,7 +1,7 @@
 package bot
 
 import (
-	"fmt"
+	// "fmt"
 	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -12,27 +12,34 @@ import (
 
 func (h *BotHandler) HandleShareCommand(update tgbotapi.Update) {
     chatID := update.Message.Chat.ID
+    userID := int64(update.Message.From.ID)
     args := update.Message.CommandArguments()
+
+    // 1. Kiểm tra tham số
     if args == "" {
-        h.replyRaw(chatID, "Vui lòng cung cấp ShareID hoặc FileID để tạo share. Ví dụ: /share 123")
+        h.replyRaw(chatID, "⚠️ Vui lòng nhập ID file. Ví dụ: `/share 123`")
         return
     }
 
-    // If argument is numeric, assume it's fileID and create a quick share without password
-    id, err := strconv.ParseInt(args, 10, 64)
-    if err == nil {
-        // create simple share (no password)
-        share, err := h.ShareSvc.CreateShare(int64(update.Message.From.ID), id, "")
-        if err != nil {
-            h.replyRaw(chatID, "Tạo share thất bại: "+err.Error())
-            return
-        }
-        link := fmt.Sprintf("https://%s/s/%s", "example.com", share.Hash)
-        h.replyRaw(chatID, "Share tạo thành công: "+link)
+    fileID, err := strconv.ParseInt(args, 10, 64)
+    if err != nil {
+        h.replyRaw(chatID, "❌ ID file phải là số. Ví dụ: `/share 123`")
         return
     }
 
-    h.replyRaw(chatID, "Tham số không hợp lệ. Vui lòng gửi ID dạng số.")
+    // 2. Kích hoạt Wizard (Giống hệt lúc bấm nút)
+    h.StateMu.Lock()
+    if h.States[userID] == nil {
+        h.States[userID] = make(map[string]interface{})
+    }
+    // Lưu ID file vào bộ nhớ
+    h.States[userID]["fileID"] = fileID
+    // Chuyển trạng thái sang bước 1: Đợi nhập mật khẩu
+    h.States[userID]["state"] = StateAwaitingPassword
+    h.StateMu.Unlock()
+
+    // 3. Hỏi người dùng
+    h.replyRaw(chatID, "Bạn có muốn đặt mật khẩu không?\n👉 Nhập mật khẩu mong muốn hoặc gõ `skip` để bỏ qua:")
 }
 
 // AuthorizeShareFlow: user provides password and we call AuthorizeShare
