@@ -79,35 +79,35 @@ func (c *Client) request(method, path string, body any, out any) error {
 // POST /v1/files  (init upload)
 func (c *Client) UploadFile(req UploadFileRequest) (*UploadFileResponse, error) {
 	var out UploadFileResponse
-	err := c.request("POST", "/v1/files", req, &out)
+	err := c.request("POST", "/api/v1/files", req, &out)
 	return &out, err
 }
 
 // POST /v1/files/{id}/report-complete
 func (c *Client) ReportComplete(id int64, req ReportUploadCompleteRequest) (*ReportUploadCompleteResponse, error) {
 	var out ReportUploadCompleteResponse
-	err := c.request("POST", fmt.Sprintf("/v1/files/%d/report-complete", id), req, &out)
+	err := c.request("POST", fmt.Sprintf("/api/v1/files/%d/report-complete", id), req, &out)
 	return &out, err
 }
 
 // GET /v1/files
 func (c *Client) ListFiles() ([]File, error) {
 	var out []File
-	err := c.request("GET", "/v1/files", nil, &out)
+	err := c.request("GET", "/api/v1/files", nil, &out)
 	return out, err
 }
 
 // GET /v1/files/{id}/report
 func (c *Client) GetFileReport(id int64) (*UploadReport, error) {
 	var out UploadReport
-	err := c.request("GET", fmt.Sprintf("/v1/files/%d/report", id), nil, &out)
+	err := c.request("GET", fmt.Sprintf("/api/v1/files/%d/report", id), nil, &out)
 	return &out, err
 }
 
 // GET /v1/upload-reports
 func (c *Client) GetUploadReports(limit, offset int) ([]UploadReport, error) {
 	var out []UploadReport
-	err := c.request("GET", fmt.Sprintf("/v1/upload-reports?limit=%d&offset=%d", limit, offset), nil, &out)
+	err := c.request("GET", fmt.Sprintf("/api/v1/upload-reports?limit=%d&offset=%d", limit, offset), nil, &out)
 	return out, err
 }
 
@@ -116,21 +116,21 @@ func (c *Client) GetUploadReports(limit, offset int) ([]UploadReport, error) {
 // POST /v1/shares
 func (c *Client) CreateShare(req CreateShareRequest) (*Share, error) {
 	var out Share
-	err := c.request("POST", "/v1/shares", req, &out)
+	err := c.request("POST", "/api/v1/shares", req, &out)
 	return &out, err
 }
 
 // GET /v1/shares
 func (c *Client) ListShares(limit, offset int) ([]Share, error) {
 	var out []Share
-	err := c.request("GET", fmt.Sprintf("/v1/shares?limit=%d&offset=%d", limit, offset), nil, &out)
+	err := c.request("GET", fmt.Sprintf("/api/v1/shares?limit=%d&offset=%d", limit, offset), nil, &out)
 	return out, err
 }
 
 // GET /v1/shares/{id}
 func (c *Client) GetShareMetadata(id int64) (*ShareMetadataResponse, error) {
 	var out ShareMetadataResponse
-	err := c.request("GET", fmt.Sprintf("/v1/shares/%d", id), nil, &out)
+	err := c.request("GET", fmt.Sprintf("/api/v1/shares/%d", id), nil, &out)
 	return &out, err
 }
 
@@ -138,13 +138,13 @@ func (c *Client) GetShareMetadata(id int64) (*ShareMetadataResponse, error) {
 func (c *Client) AuthorizeShare(id int64, password string) (*ShareAuthorizeResponse, error) {
 	req := ShareAuthorizeRequest{Password: password}
 	var out ShareAuthorizeResponse
-	err := c.request("POST", fmt.Sprintf("/v1/shares/%d/authorize", id), req, &out)
+	err := c.request("POST", fmt.Sprintf("/api/v1/shares/%d/authorize", id), req, &out)
 	return &out, err
 }
 
 // GET /v1/shares/{id}/download
 func (c *Client) DownloadShare(id int64, headers map[string]string) ([]byte, string, error) {
-	url := c.BaseURL + fmt.Sprintf("/v1/shares/%d/download", id)
+	url := c.BaseURL + fmt.Sprintf("/api/v1/shares/%d/download", id)
 	req, _ := http.NewRequest("GET", url, nil)
 
 	req.Header.Set("X-Telegram-User-Id", fmt.Sprintf("%d", c.TelegramID))
@@ -178,7 +178,7 @@ func (c *Client) DownloadShare(id int64, headers map[string]string) ([]byte, str
 // POST /v1/shares/{id}/revoke
 func (c *Client) RevokeShare(id int64) (*ShareRevokeResponse, error) {
 	var out ShareRevokeResponse
-	err := c.request("POST", fmt.Sprintf("/v1/shares/%d/revoke", id), nil, &out)
+	err := c.request("POST", fmt.Sprintf("/api/v1/shares/%d/revoke", id), nil, &out)
 	return &out, err
 }
 
