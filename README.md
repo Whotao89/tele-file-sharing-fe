@@ -6,10 +6,10 @@ Bot được viết bằng **Go**, giao tiếp trực tiếp với **Telegram Bo
 ## 👥 Thành viên nhóm Frontend
 | Họ tên                      | Vai trò                                                                                   |
 | --------------------------- | ----------------------------------------------------------------------------------------- |
-| Nguyễn Nguyên Ngọc (Leader) | Tổng hợp và tạo file sườn, sync data giữa FE và BE, hỗ trợ thành viên, use case (share)   |
-| Bùi Hoàng Cung              | Làm requirement (non-functional), use case (upload), xử lý command về upload (dự tính)    |
-| Nguyễn Trí Thành            | Làm requirement (non-functional), use case (revoke), xử lý command về revoke (dự tính)    |
-| Võ Hùng Dũng                | Làm requirement (non-functional), use case (download), xử lý command về download (dự tính)|
+| Nguyễn Nguyên Ngọc (Leader) | Tổng hợp và tạo file sườn, sync data giữa FE và BE, hỗ trợ thành viên, use case (share), viết reports cho M2   |
+| Bùi Hoàng Cung              | Làm requirement (non-functional), use case (upload), xử lý request để gửi tới BE  |
+| Nguyễn Trí Thành            | Làm requirement (non-functional), use case (revoke), tạo service để xử lý với BE API   |
+| Võ Hùng Dũng                | Làm requirement (non-functional), use case (download), tạo router để đưa các lệnh chuyển ngược về hàm xử lý |
 
 ---
 ## 🚀 Hướng dẫn chạy dự án (Local Development)
@@ -33,19 +33,24 @@ sops -d env/dev.enc > env/dev.env
 
 - Cấu hình trong env/example.env:
 ```bash
-TELEGRAM_BOT_TOKEN=YOUR_TOKEN
-BE_API_BASE=http://your_backend/
-USE_WEBHOOK=true
-WEBHOOK_URL=http://yourdomain.com/webhook
-PORT=YOUR_PORT
+TELEGRAM_BOT_TOKEN="YOUR_TOKEN"
+BE_API_BASE="https://your_backend"
+
+USE_WEBHOOK=false
+WEBHOOK_URL="https://yourdomain.com/webhook"
+PORT="YOUR_PORT"
+
 API_TIMEOUT=10
-TEMP_DIR=/tmp/bot
-FILE_BASE_URL=http://your_backend/static
+DEBUG=false
+TEMP_DIR="/tmp/bot"
+FILE_BASE_URL="https://your_backend/static"
 ```
 
 ### 3. Chạy bot bằng Docker
 ```bash
-docker compose up --build
+docker compose build
+docker compuse up -d
+docker logs -f telegram-bot
 ```
 
 ### 4. Chạy bot trực tiếp bằng Go
@@ -58,49 +63,61 @@ go run ./cmd/bot
 ## 🤖 Các lệnh Telegram hỗ trợ
 | Lệnh                 | Chức năng                             |
 | -------------------- | ------------------------------------- |
+| `/start`             | Trợ giúp |
 | `/me`                | Xem thông tin người dùng trên backend |
-| `/files`             | Liệt kê các file đã upload            |
-| (WIP) `/share`       | Tạo link chia sẻ file                 |
-| (Chưa thử) upload    | Gửi file, bot tự tải file lên backend |
+| `/myfiles`             | Liệt kê các file đã upload            |
+| `/share <share_id>`       | Tạo link chia sẻ file                 |
+| `/upload` (chưa thành công)    | Gửi file, bot tự tải file lên backend |
 | (Chưa thử) download  | Tải file về từ đường dẫn được chia sẻ |
 
 ---
 ## 📂 Cấu trúc thư mục
 ```
 tele-file-sharing-fe/
-├── README.md                     # Giới thiệu & hướng dẫn
-├── Dockerfile                    # Build Telegram Bot
-├── compose.yml                   # Docker Compose dev environment
+├── README.md           # Giới thiệu & hướng dẫn sử dụng
+├── Dockerfile          # Docker build đa tầng cho Telegram Bot
+├── compose.yml         # Docker Compose (environment for dev)
+│
 ├── .github/
-│   └── workflows/
-│       └── ci.yml                # CI (build-only, chưa có test/lint/scan)
+│ └── workflows/
+│   └── ci.yml          # CI Pipeline (build-only, chưa có test/lint)
 │
 ├── env/
-│   ├── example.env               # File mẫu config
-│   ├── dev.enc                   # File env mã hoá (WIP, lỗi với sops)
+│ ├── example.env       # File mẫu config (TELEGRAM_BOT_TOKEN, BE_API_BASE,…)
+│ └── dev.env (ignored) # File env dành cho localhost/dev (không push)
 │
 ├── cmd/
-│   └── bot/
-│       └── main.go               # Entry point — chạy bot
+│ └── bot/
+│ └── main.go           # Entry point — chạy bot (polling mode)
 │
 ├── internal/
-│   ├── config/
-│   │   └── config.go             # Load & validate env
-│   │
-│   ├── bot/
-│   │   ├── handler.go            # Xử lý command & upload file
-│   │   ├── router.go             # (Dự tính) Map command → handler
-│   │   └── middleware.go         # (Dự tính) Logging, auth
-│   │
-│   └── api/
-│       ├── client.go             # Gửi request đến backend API
-│       └── models.go             # Structs API (dự tính tách thành dto/)
+│ ├── service/          # Business logic — xử lý với backend API
+│ │ ├── file_service.go   # Gọi API file, xử lý logic danh sách/tạo file
+│ │ ├── share_service.go  # Xử lý logic chia sẻ file
+│ │ ├── upload_service.go # Điều phối upload/URL presigned
+│ │ └── user_service.go   # Thông tin người dùng (me, profile,…)
+│ │
+│ ├── config/
+│ │ └── config.go       # Load/validate env (BOT_TOKEN, BASE_URL,…)
+│ │
+│ ├── bot/              # Toàn bộ Telegram Bot UI logic
+│ │ ├── handler.go        # Xử lý lệnh chung (/start, /me,…)
+│ │ ├── upload_handler.go # Nhận & xử lý upload file
+│ │ ├── share_handler.go  # Tạo/xem/revoke share
+│ │ ├── keyboards.go      # Inline keyboards, menu buttons
+│ │ ├── middleware.go     # Đính kèm API client, User context
+│ │ └── router.go         # Định tuyến lệnh
+│ │
+│ └── api/
+│ ├── client.go         # HTTP client gửi request tới backend BE
+│ └── models.go         # Struct request/response chuẩn với backend
 │
-├── docs/                         # Tài liệu nội bộ
-└── reports/                      # Báo cáo môn học (.md)
-    ├── M1/
-    ├── M2/
-    └── M3/
+├── docs/               # Tài liệu nội bộ (design, notes,…)
+│
+└── reports/            # Báo cáo môn học
+├── M1/                 # Báo cáo giai đoạn 1 (Phân tích)
+├── M2/                 # Báo cáo giai đoạn 2 (Triển khai, cài đặt)
+└── M3/                 # Báo cáo giai đoạn 3 (Hoàn thiện, demo)
 ```
 
 ---
@@ -115,16 +132,17 @@ git push origin dev:<ten-tinh-nang>
 ### 2. Cập nhật API (nếu backend thay đổi)
 - Chỉnh sửa internal/api/client.go
 - Cập nhật struct trong models.go
-- Điều chỉnh command tương ứng trong handler.go
+- Điều chỉnh command tương ứng trong các <feat>_handler.go
 
 ### 3. Viết code
-- internal/api/* → Giao tiếp backend
-- internal/bot/handler.go → Logic command
+- internal/service → Xử lý BE API
+- internal/api/* → Giao tiếp BE
+- internal/bot/* → Logic command
 - internal/config/* → Thêm config nếu cần
 
 ### 4. Test thủ công qua Telegram
 - Gửi file thử
-- Test lệnh /me, /files
+- Test lệnh /start, /me, /myfiles,...
 - Kiểm tra trường hợp backend lỗi
 
 ### 5. Tạo Pull Request
@@ -140,4 +158,5 @@ git push origin dev:<ten-tinh-nang>
 git push origin --delete <ten-tinh-nang>
 
 ```
+
 
