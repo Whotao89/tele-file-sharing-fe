@@ -30,14 +30,13 @@ Load trả về thiết lập từ đường dẫn env cho trước
 	VD: env := "env/example.env"
 */
 func Load(env string) {
-	// Default env
-	if env == "" {
-		env = "env/dev.env"
+	var err error
+	if env != "" {
+		err = godotenv.Load(env)
+	} else {
+		err = godotenv.Load("env/dev.env")
 	}
-	// Load env file when running locally (not in container)
-	if _, err := os.Stat(env); err == nil {
-		_ = godotenv.Load(env)
-	}
+	fmt.Println("Loaded env error =", err)
 
 	C = Config{
 		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),

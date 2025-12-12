@@ -124,6 +124,27 @@ func (c *Client) CreateShare(req CreateShareRequest) (*Share, error) {
 func (c *Client) ListShares(limit, offset int) ([]Share, error) {
 	var out []Share
 	err := c.request("GET", fmt.Sprintf("/api/v1/shares?limit=%d&offset=%d", limit, offset), nil, &out)
+	if err == nil && len(out) > 0 {
+		return out, nil
+	}
+
+	// Backend trả wrapper object {shares: [...]} thay vì array trực tiếp
+	type SharesWrapper struct {
+		Data   []Share `json:"data"`
+		Shares []Share `json:"shares"`
+	}
+	var wrapper SharesWrapper
+	err2 := c.request("GET", fmt.Sprintf("/api/v1/shares?limit=%d&offset=%d", limit, offset), nil, &wrapper)
+	if err2 == nil {
+		if len(wrapper.Shares) > 0 {
+			return wrapper.Shares, nil
+		}
+		if len(wrapper.Data) > 0 {
+			return wrapper.Data, nil
+		}
+	}
+
+	// Nếu cả 2 cách đều fail, return error gốc
 	return out, err
 }
 
@@ -142,8 +163,80 @@ func (c *Client) AuthorizeShare(id int64, password string) (*ShareAuthorizeRespo
 	return &out, err
 }
 
+// GET /api/v1/files/{id}/download
+// Download file cho file owner
+func (c *Client) DownloadFile(fileID int64) ([]byte, string, error) {
+	url := c.BaseURL + fmt.Sprintf("/api/v1/files/%d/download", fileID)
+	req, _ := http.NewRequest("GET", url, nil)
+
+	req.Header.Set("X-Telegram-User-Id", fmt.Sprintf("%d", c.TelegramID))
+	req.Header.Set("X-Telegram-Username", c.Username)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("download failed: %s", string(b))
+	}
+
+	// Parse presigned URL from response
+	var presignedResp struct {
+		URL       string `json:"url"`
+		ExpiresIn int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&presignedResp); err != nil {
+		return nil, "", fmt.Errorf("invalid response: %w", err)
+	}
+
+	// Download from presigned URL
+	presignedReq, _ := http.NewRequest("GET", presignedResp.URL, nil)
+	presignedResp2, err := c.HTTP.Do(presignedReq)
+	if err != nil {
+		return nil, "", fmt.Errorf("presigned download failed: %w", err)
+	}
+	defer presignedResp2.Body.Close()
+
+	if presignedResp2.StatusCode >= 400 {
+		b, _ := io.ReadAll(presignedResp2.Body)
+		return nil, "", fmt.Errorf("presigned download failed: %s", string(b))
+	}
+
+	// Read file binary
+	data, err := io.ReadAll(presignedResp2.Body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Get filename from list files
+	files, err := c.ListFiles()
+	if err != nil {
+		return data, "file", nil // Fallback
+	}
+
+	for _, f := range files {
+		if f.ID == fileID {
+			return data, f.Filename, nil
+		}
+	}
+
+	return data, "file", nil
+}
+
 // GET /v1/shares/{id}/download
+// Bước 1: Lấy presigned URL từ BE
 func (c *Client) DownloadShare(id int64, headers map[string]string) ([]byte, string, error) {
+	// Bước 0: Lấy metadata share để có filename
+	var metadata ShareMetadataResponse
+	if err := c.request("GET", fmt.Sprintf("/api/v1/shares/%d", id), nil, &metadata); err != nil {
+		return nil, "", fmt.Errorf("failed to get share metadata: %w", err)
+	}
+	
+	filename := metadata.File.Filename
+	
 	url := c.BaseURL + fmt.Sprintf("/api/v1/shares/%d/download", id)
 	req, _ := http.NewRequest("GET", url, nil)
 
@@ -165,12 +258,33 @@ func (c *Client) DownloadShare(id int64, headers map[string]string) ([]byte, str
 		return nil, "", fmt.Errorf("download failed: %s", string(b))
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// Parse presigned URL từ response
+	var presignedResp struct {
+		URL       string `json:"url"`
+		ExpiresIn int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&presignedResp); err != nil {
+		return nil, "", fmt.Errorf("invalid response: %w", err)
+	}
+
+	// Bước 2: Download từ presigned URL
+	presignedReq, _ := http.NewRequest("GET", presignedResp.URL, nil)
+	presignedResp2, err := c.HTTP.Do(presignedReq)
+	if err != nil {
+		return nil, "", fmt.Errorf("presigned download failed: %w", err)
+	}
+	defer presignedResp2.Body.Close()
+
+	if presignedResp2.StatusCode >= 400 {
+		b, _ := io.ReadAll(presignedResp2.Body)
+		return nil, "", fmt.Errorf("presigned download failed: %s", string(b))
+	}
+
+	// Đọc file binary
+	data, err := io.ReadAll(presignedResp2.Body)
 	if err != nil {
 		return nil, "", err
 	}
-
-	filename := resp.Header.Get("Content-Disposition")
 
 	return data, filename, nil
 }

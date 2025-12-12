@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"fe-file-sharing/internal/api"
+	"fmt"
 	"os"
 )
 
@@ -16,8 +16,9 @@ func NewUploadService(client *api.Client) *UploadService {
 }
 
 // StartUpload: Gọi BE lấy URL thật
-func (s *UploadService) StartUpload(telegramID int64, filename string, size int64, mimeType string) (int64, string, error) {
+func (s *UploadService) StartUpload(telegramID int64, telegramFileID string, filename string, size int64, mimeType string) (int64, string, error) {
 	req := api.UploadFileRequest{
+		TelegramFileID: telegramFileID,
 		Filename:       filename,
 		Size:           size,
 		MimeType:       mimeType,
@@ -42,13 +43,17 @@ func (s *UploadService) UploadToMinIO(ctx context.Context, presignedURL string, 
 		return fmt.Errorf("không đọc được file tại: %s", filePath)
 	}
 
-	return api.UploadViaPresignedURL(presignedURL, "", data)
+	return api.UploadViaPresignedURL(presignedURL, "text/plain", data)
 }
 
-// CompleteUpload: Báo cáo thật
-func (s *UploadService) CompleteUpload(telegramID int64, fileID int64) error {
+// CompleteUpload: Báo cáo thật với metrics
+func (s *UploadService) CompleteUpload(telegramID int64, fileID int64, fileSizeActual int64, uploadDurationMs int64, bandwidthKbps float64) error {
 	req := api.ReportUploadCompleteRequest{
-		Status: "completed",
+		Status:           "completed",
+		ReportType:       "success",
+		FileSizeActual:   fileSizeActual,
+		UploadDurationMs: uploadDurationMs,
+		BandwidthKbps:    bandwidthKbps,
 	}
 
 	prevID := s.apiClient.TelegramID

@@ -133,6 +133,7 @@ type UserMinimal struct {
 type ShareMetadataResponse struct {
 	ID        int64        `json:"id"`
 	Hash      string       `json:"hash"`
+	RequirePassword bool `json:"require_password"`
 	Revoked   bool         `json:"revoked"`
 	ExpiresAt *time.Time   `json:"expires_at"`
 	CreatedAt time.Time    `json:"created_at"`

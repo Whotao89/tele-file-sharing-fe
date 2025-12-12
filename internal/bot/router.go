@@ -38,7 +38,7 @@ func (r *BotRouter) Start() {
         cmd := update.Message.Command()
         if cmd != "" {
             switch cmd {
-            case "start":
+            case "start", "help":
                 r.Handler.HandleStart(update)
             case "me":
                 r.Handler.HandleMe(update)
@@ -48,10 +48,12 @@ func (r *BotRouter) Start() {
                 r.Handler.HandleFiles(update)
             case "share":
                 r.Handler.HandleShareCommand(update)
-            // case "myshares":
-            //     r.Handler.HandleMyShares(update)
+            case "myshares":
+                r.Handler.HandleMyShares(update)
             case "revoke":
                 r.Handler.HandleRevoke(update)
+            case "uploadhistory":
+                r.Handler.HandleUploadHistory(update)
             }
             continue
         }
@@ -59,18 +61,24 @@ func (r *BotRouter) Start() {
         if update.Message.Text != "" {
             text := update.Message.Text
 
-				if text == "📂 Quản lý File" {
-					go r.Handler.HandleFiles(update)
-					continue
-				}
+			if text == "📂 Quản lý File" {
+				go r.Handler.HandleFiles(update)
+				continue
+			}
 				
-				if text == "ℹ️ Trợ giúp" {
-					go r.Handler.HandleStart(update)
-					continue
-				}
+			if text == "ℹ️ Trợ giúp" {
+				go r.Handler.HandleStart(update)
+				continue
+			}
 
-				// Nếu không phải nút bấm thì mới coi là nhập liệu (Wizard)
-				go r.Handler.HandleTextInput(update)
-        }
+			if text == "🔗 Quản lý Share Link" {
+				go r.Handler.HandleMyShares(update)
+				continue
+            }
+			
+			// Handle state-based text input (wizard states)
+			go r.Handler.HandleTextInput(update)
+            continue
+		}
     }
 }
