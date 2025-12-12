@@ -240,9 +240,10 @@ func (h *BotHandler) HandleStart(update tgbotapi.Update) {
         msg := tgbotapi.NewMessage(chatID, fileInfo)
         msg.ParseMode = "Markdown"
 
-        // show nút nhập mật khẩu
+        // Hiển thị cả nút Tải xuống (không token) và Nhập mật khẩu
+        btnDownload := tgbotapi.NewInlineKeyboardButtonData("⬇️ Tải xuống", fmt.Sprintf("cmd:download:%d", shareID))
         btnAuth := tgbotapi.NewInlineKeyboardButtonData("🔐 Nhập Mật Khẩu", fmt.Sprintf("cmd:auth:%d", shareID))
-        msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btnAuth))
+        msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btnDownload, btnAuth))
         
         h.TG.Send(msg)
         return
@@ -303,21 +304,42 @@ func (h *BotHandler) HandleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		h.States[userID]["state"] = StateAwaitingPassword
 		h.StateMu.Unlock()
 
-		h.replyRaw(chatID, "👉 Nhập mật khẩu bạn muốn đặt:")
+		h.replyRaw(chatID, "🔐 Vui lòng nhập mật khẩu để tạo chia sẻ hoặc gõ 'skip' nếu không đặt mật khẩu:")
         
-    // // Case: Người nhận bấm nút "Tải xuống" 
-    // case strings.HasPrefix(data, "cmd:download:"):
-    //     parts := strings.Split(data, ":")
-    //     shareID, _ := strconv.ParseInt(parts[2], 10, 64)
-        
-    //     // Chuyển sang flow nhập password
-    //     h.StateMu.Lock()
-    //     if h.States[userID] == nil { h.States[userID] = make(map[string]interface{}) }
-    //     h.States[userID]["auth_share_id"] = shareID
-    //     h.States[userID]["state"] = "awaiting_auth_password"
-    //     h.StateMu.Unlock()
-        
-    //     h.replyRaw(chatID, "🔑 Nhập mật khẩu (hoặc gõ `skip` nếu share không có mật khẩu):")
+    // Case: Người nhận bấm nút "Tải xuống" (thử tải không kèm token)
+    case strings.HasPrefix(data, "cmd:download:"):
+        parts := strings.Split(data, ":")
+        shareID, _ := strconv.ParseInt(parts[2], 10, 64)
+
+        h.replyRaw(chatID, "⬇️ Đang chuẩn bị tải xuống...")
+
+        // Thử download mà không kèm token
+        dataBytes, filename, err := h.ShareSvc.DownloadShare(userID, shareID, "")
+        if err != nil {
+            errMsg := err.Error()
+            // Nếu BE báo cần mật khẩu
+            if strings.Contains(strings.ToLower(errMsg), "password_required") ||
+               strings.Contains(strings.ToLower(errMsg), "requires password") ||
+               strings.Contains(errMsg, "403") {
+                // Lưu state để yêu cầu mật khẩu
+                h.StateMu.Lock()
+                if h.States[userID] == nil { h.States[userID] = make(map[string]interface{}) }
+                h.States[userID]["auth_share_id"] = shareID
+                h.States[userID]["state"] = "awaiting_auth_password"
+                h.StateMu.Unlock()
+
+                h.replyRaw(chatID, "🔐 Share yêu cầu mật khẩu. Vui lòng nhập mật khẩu:")
+                return
+            }
+            // Các lỗi khác
+            h.replyRaw(chatID, "❌ Không thể tải xuống: "+errMsg)
+            return
+        }
+
+        // Tải thành công (share không cần mật khẩu)
+        doc := tgbotapi.FileBytes{Name: filename, Bytes: dataBytes}
+        h.TG.Send(tgbotapi.NewDocument(chatID, doc))
+        return
 
         // Case: Người nhận bấm nút "Nhập mật khẩu"
         case strings.HasPrefix(data, "cmd:auth:"):
@@ -583,10 +605,21 @@ func (h *BotHandler) HandleTextInput(update tgbotapi.Update) {
 		data, filename, err := h.ShareSvc.DownloadShare(userID, shareID, token)
 		if err != nil {
 			errMsg := err.Error()
-			// Nếu lỗi authorization/password
-			if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "403") || 
-			   strings.Contains(errMsg, "unauthorized") || strings.Contains(errMsg, "password") {
-				h.replyRaw(chatID, "❌ Mật khẩu sai! Vui lòng nhập lại mật khẩu:")
+			// Phân biệt lỗi
+			if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "404") {
+				h.replyRaw(chatID, "❌ Link chia sẻ không tồn tại hoặc đã bị xóa.")
+				h.StateMu.Lock()
+				delete(h.States, userID)
+				h.StateMu.Unlock()
+			} else if strings.Contains(errMsg, "revoked") || strings.Contains(errMsg, "expired") {
+				h.replyRaw(chatID, "⏰ Link chia sẻ này đã hết hạn hoặc bị thu hồi.")
+				h.StateMu.Lock()
+				delete(h.States, userID)
+				h.StateMu.Unlock()
+			} else if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "403") || 
+			   strings.Contains(errMsg, "unauthorized") {
+				// Token invalid hoặc hết hạn
+				h.replyRaw(chatID, "❌ Token hết hạn. Vui lòng nhập mật khẩu lại:")
 				// Không xóa state để user nhập lại tiếp
 			} else {
 				h.replyRaw(chatID, "❌ Lỗi tải file: "+errMsg)

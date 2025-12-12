@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -244,7 +245,12 @@ func (c *Client) DownloadShare(id int64, headers map[string]string) ([]byte, str
 	req.Header.Set("X-Telegram-Username", c.Username)
 
 	for k, v := range headers {
-		req.Header.Set(k, v)
+		// Convert Authorization header to X-Share-Token for BE compatibility
+		if k == "Authorization" && strings.HasPrefix(v, "Bearer ") {
+			req.Header.Set("X-Share-Token", strings.TrimPrefix(v, "Bearer "))
+		} else {
+			req.Header.Set(k, v)
+		}
 	}
 
 	resp, err := c.HTTP.Do(req)
