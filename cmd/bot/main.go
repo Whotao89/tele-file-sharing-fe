@@ -45,6 +45,7 @@ func main() {
 	router := bot.NewRouter(tg, handler)
 
 	fmt.Println("Bắt đầu router Telegram...")
+	fmt.Printf("Bot đã bắt đầu chạy tại: https://web.telegram.org/k/#@%s", handler.TG.Self.UserName)
 	router.Start()
-	fmt.Println("Bot đã bắt đầu chạy")
 }
+
