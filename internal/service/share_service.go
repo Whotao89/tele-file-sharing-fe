@@ -3,6 +3,7 @@ package service
 import (
 	"fe-file-sharing/internal/api"
 	"fmt"
+	"time"
 )
 
 type ShareService struct {
@@ -16,17 +17,18 @@ func NewShareService(client *api.Client) *ShareService {
 // ShareServiceIface defines the subset of share operations the bot needs.
 // Both real ShareService and MockShareService implement this interface.
 type ShareServiceIface interface {
-	CreateShare(telegramID int64, fileID int64, password string) (*api.Share, error)
+	CreateShare(telegramID int64, fileID int64, password string, expiresAt *time.Time) (*api.Share, error)
 	AuthorizeShare(telegramID int64, shareID int64, password string) (string, error)
 	DownloadShare(telegramID int64, shareID int64, accessToken string) ([]byte, string, error)
 }
 
 // CreateShare: Tạo link chia sẻ
 // Truyền telegramID để header được set trên api client
-func (s *ShareService) CreateShare(telegramID int64, fileID int64, password string) (*api.Share, error) {
+func (s *ShareService) CreateShare(telegramID int64, fileID int64, password string, expiresAt *time.Time) (*api.Share, error) {
 	req := api.CreateShareRequest{
 		FileID:   fileID,
 		Password: password,
+		ExpiresAt: expiresAt,
 	}
 
 	prevID := s.apiClient.TelegramID
@@ -92,4 +94,17 @@ func (s *ShareService) RevokeShare(telegramID int64, shareID int64) error {
 	
 	s.apiClient.TelegramID = prevID
 	return err
+}
+
+// ListShares: Lấy danh sách các chia sẻ của user
+func (s *ShareService) ListShares(telegramID int64, limit int, offset int) ([]api.Share, error) {
+	prevID := s.apiClient.TelegramID
+	s.apiClient.TelegramID = telegramID
+	shares, err := s.apiClient.ListShares(limit, offset)
+	s.apiClient.TelegramID = prevID
+
+	if err != nil {
+		return nil, fmt.Errorf("lỗi lấy danh sách share: %w", err)
+	}
+	return shares, nil
 }

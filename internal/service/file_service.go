@@ -3,10 +3,8 @@ package service
 import (
 	"fmt"
 	"io"
-	"mime"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"fe-file-sharing/internal/api"
 )
@@ -24,7 +22,7 @@ func NewFileService(client *api.Client, tempDir string) *FileService {
 	return &FileService{TempDir: tempDir, apiClient: client}
 }
 
-// ValidateSize: Kiểm tra dung lượng (Ví dụ giới hạn 50MB)
+// ValidateSize: Kiểm tra dung lượng (Ví dụ giới hạn 100MB)
 func (s *FileService) ValidateSize(size int64, limit int64) error {
 	if size == 0 {
 		return fmt.Errorf("file rỗng")
@@ -32,24 +30,6 @@ func (s *FileService) ValidateSize(size int64, limit int64) error {
 	if size > limit {
 		return fmt.Errorf("kích thước file quá lớn (giới hạn %d MB)", limit/(1024*1024))
 	}
-	return nil
-}
-
-// ValidateMime: Kiểm tra loại file (extension/mime)
-func (s *FileService) ValidateMime(filename string) error {
-	ext := strings.ToLower(filepath.Ext(filename))
-	// Danh sách đen (ví dụ chặn file thực thi)
-	blocklist := []string{".exe", ".bat", ".sh", ".msi"}
-	for _, blocked := range blocklist {
-		if ext == blocked {
-			return fmt.Errorf("không hỗ trợ định dạng file thực thi")
-		}
-	}
-
-	// (Optional) Kiểm tra mime type chuẩn
-	mimeType := mime.TypeByExtension(ext)
-	_ = mimeType // Có thể log lại nếu cần
-
 	return nil
 }
 
@@ -82,15 +62,36 @@ func (s *FileService) CleanUp(path string) {
 
 // ListFiles: gọi backend trả về danh sách file của user
 func (s *FileService) ListFiles(telegramID int64) ([]api.File, error) {
-	prevID := s.apiClient.TelegramID
+	prev := s.apiClient.TelegramID
 	s.apiClient.TelegramID = telegramID
-	
 	files, err := s.apiClient.ListFiles()
-	
-	s.apiClient.TelegramID = prevID
-	
+	s.apiClient.TelegramID = prev
 	if err != nil {
 		return nil, fmt.Errorf("ListFiles failed: %w", err)
 	}
 	return files, nil
+}
+
+// GetUploadReports: Lấy danh sách upload reports
+func (s *FileService) GetUploadReports(telegramID int64, limit, offset int) ([]api.UploadReport, error) {
+	prev := s.apiClient.TelegramID
+	s.apiClient.TelegramID = telegramID
+	reports, err := s.apiClient.GetUploadReports(limit, offset)
+	s.apiClient.TelegramID = prev
+	if err != nil {
+		return nil, fmt.Errorf("GetUploadReports failed: %w", err)
+	}
+	return reports, nil
+}
+
+// GetFileReport: Lấy upload report của 1 file cụ thể
+func (s *FileService) GetFileReport(telegramID int64, fileID int64) (*api.UploadReport, error) {
+	prev := s.apiClient.TelegramID
+	s.apiClient.TelegramID = telegramID
+	report, err := s.apiClient.GetFileReport(fileID)
+	s.apiClient.TelegramID = prev
+	if err != nil {
+		return nil, fmt.Errorf("GetFileReport failed: %w", err)
+	}
+	return report, nil
 }
