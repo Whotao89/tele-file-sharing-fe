@@ -112,7 +112,7 @@ type ShareAuthorizeRequest struct {
 }
 
 type ShareAuthorizeResponse struct {
-	AccessToken string `json:"access_token"`
+	AccessToken string `json:"token"`
 }
 
 type FileMetadata struct {

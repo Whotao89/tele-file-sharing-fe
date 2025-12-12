@@ -38,7 +38,7 @@ func (h *BotHandler) HandleShareCommand(update tgbotapi.Update) {
     h.StateMu.Unlock()
 
     // 3. Hỏi người dùng
-    h.replyRaw(chatID, "🔐 Vui lòng nhập mật khẩu để tạo chia sẻ:")
+    h.replyRaw(chatID, "🔐 Vui lòng nhập mật khẩu để tạo chia sẻ hoặc gõ 'skip' nếu không đặt mật khẩu:")
 }
 
 
@@ -73,6 +73,11 @@ func (h *BotHandler) HandleMyShares(update tgbotapi.Update) {
             status = "⏰ Đã hết hạn"
         }
         
+        // Password status
+        passwordLabel := "🔓 Công khai"
+        if s.RequirePwd {
+            passwordLabel = "🔐 Yêu cầu mật khẩu"
+        }
         
         expiryText := "Không có"
         if s.ExpiresAt != nil {
@@ -82,8 +87,8 @@ func (h *BotHandler) HandleMyShares(update tgbotapi.Update) {
         // Build share URL: dùng Telegram deep link /start?share_={ID}
         shareURL := fmt.Sprintf("https://t.me/%s?start=share_%d", h.BotUsername, s.ID)
         
-        entry := fmt.Sprintf("%d. Share ID: %d | File ID: %d\n   Link: %s\n   %s\n   Hết hạn: %s\n   Tạo: %s\n\n", 
-            i+1, s.ID, s.FileID, shareURL, status, expiryText, 
+        entry := fmt.Sprintf("%d. Share ID: %d | File ID: %d\n   Link: %s\n   %s\n   %s\n   Hết hạn: %s\n   Tạo: %s\n\n", 
+            i+1, s.ID, s.FileID, shareURL, status, passwordLabel, expiryText, 
             s.CreatedAt.In(time.Local).Format("02/01/2006 15:04:05"))
         
         // Nếu message sắp vượt 4000 chars → gửi và reset
@@ -133,8 +138,23 @@ func (h *BotHandler) HandleRevoke(update tgbotapi.Update) {
 // handleInputPassword: xử lý nhập mật khẩu
 func (h *BotHandler) handleInputPassword(chatID int64, userID int64, input string) {
     password := strings.TrimSpace(input)
+    // Cho phép bỏ qua mật khẩu bằng cách nhập 'skip'
+    if strings.EqualFold(password, "skip") {
+        password = ""
+    }
+
     if password == "" {
-        h.replyRaw(chatID, "⚠️ Mật khẩu không được để trống. Vui lòng nhập lại:")
+        // Không đặt mật khẩu: chuyển luôn sang bước nhập ngày hết hạn
+        h.StateMu.Lock()
+        if _, exists := h.States[userID]; !exists {
+            h.States[userID] = make(map[string]interface{})
+        }
+        h.States[userID]["password"] = ""
+        h.States[userID]["state"] = StateAwaitingExpiresAt
+        h.StateMu.Unlock()
+
+        msg := "🔓 Không đặt mật khẩu cho share.\n\n📅 Bước tiếp theo: Nhập ngày hết hạn (định dạng: DD/MM/YYYY) hoặc gõ 'skip' nếu muốn vĩnh viễn:"
+        h.replyRaw(chatID, msg)
         return
     }
 
@@ -186,9 +206,15 @@ func (h *BotHandler) handleInputExpiresAt(chatID int64, userID int64, input stri
     fileID := userState["fileID"].(int64)
     password := userState["password"].(string)
 
+    // Hiển thị 'Không có' nếu không đặt mật khẩu
+    passDisplay := password
+    if strings.TrimSpace(passDisplay) == "" {
+        passDisplay = "Không có"
+    }
+
     summary := fmt.Sprintf("📋 Xác nhận thông tin share:\n\n"+
         "📄 File ID: %d\n"+
-        "🔐 Mật khẩu: %s", fileID, password)
+        "🔐 Mật khẩu: %s", fileID, passDisplay)
 
     if expiresAt != nil {
         summary += fmt.Sprintf("\n📅 Hết hạn: %s", expiresAt.Format("02/01/2006 15:04:05"))
