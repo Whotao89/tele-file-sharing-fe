@@ -23,7 +23,7 @@ choco install sops
 
 ```bash
 # Windows (sử dụng chocolatey)
-choco install age
+choco install age.portable
 
 # Hoặc download từ: https://github.com/FiloSottile/age/releases
 ```
@@ -31,11 +31,10 @@ choco install age
 ## Sử dụng
 
 ### Tạo file dev.env cho lần đầu tiên
-
 Khi clone project về lần đầu, bạn cần giải mã file `dev.enc` để tạo file `dev.env`:
 
 ```powershell
-# 1. Nhận file keys.txt từ team leader và lưu vào env/keys.txt
+# 1. Nhận file keys.txt từ team leader (hoặc từ thành viên Võ Hùng Dũng) và lưu vào env/keys.txt
 
 # 2. Giải mã và tạo file dev.env tự động (UTF-8 không BOM)
 $env:SOPS_AGE_KEY_FILE="env/keys.txt"
